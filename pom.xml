@@ -2,7 +2,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.github.deltawhy.invitationonly</groupId>
     <artifactId>InvitationOnly</artifactId>
-    <version>0.1.2</version>
+    <version>0.2</version>
     <name>InvitationOnly</name>
     <repositories>
         <repository>
