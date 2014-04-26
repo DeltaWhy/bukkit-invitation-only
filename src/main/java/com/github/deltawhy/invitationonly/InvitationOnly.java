@@ -24,7 +24,6 @@ public class InvitationOnly extends JavaPlugin {
         //Set sender's uuid to "null" if it is the console sending the command to convert it to "an admin" later, if not get the player's uuid
         UUID senderid = (player == null ? UUID.fromString("00000000-0000-0000-0000-000000000000") : player.getUniqueId());
 
-        //Innvite command handling
         if (command.getName().equalsIgnoreCase("invite")) {
             if (args.length != 1) return false;
             UUID userid = getOfflinePlayerUUID(args[0]);
@@ -53,8 +52,6 @@ public class InvitationOnly extends JavaPlugin {
             }
             invite(userid, senderid);
             return true;
-
-        //Uninvite command handling
         } else if (command.getName().equalsIgnoreCase("uninvite")) {
             if (args.length != 1) return false;
             UUID userid = getOfflinePlayerUUID(args[0]);
@@ -77,8 +74,6 @@ public class InvitationOnly extends JavaPlugin {
             }
             uninvite(userid);
             return true;
-
-        //Invite quota command handling
         } else if (command.getName().equalsIgnoreCase("invitequota")) {
             if (player == null && args.length == 0) return false;
             UUID userid = getOfflinePlayerUUID(args[0]);
@@ -100,16 +95,12 @@ public class InvitationOnly extends JavaPlugin {
                 }
             }
             return true;
-
-        //Approve invite command handling
         } else if (command.getName().equalsIgnoreCase("approveinvite")) {
             if (args.length != 1) return false;
             UUID userid = getOfflinePlayerUUID(args[0]);
             promoteToMember(userid);
             getServer().getOfflinePlayer(userid).setWhitelisted(true);
             return true;
-
-        //Unapprove command handling
         } else if (command.getName().equalsIgnoreCase("unapprove")) {
             if (args.length != 1) return false;
             UUID userid = getOfflinePlayerUUID(args[0]);
@@ -120,8 +111,6 @@ public class InvitationOnly extends JavaPlugin {
             removeFromMembers(userid);
             getServer().getOfflinePlayer(userid).setWhitelisted(false);
             return true;
-
-        //Voteapprove command handling
         } else if (command.getName().equalsIgnoreCase("voteapprove")) {
             if (player == null) {
                 sender.sendMessage("This command can not be used from the console.");
@@ -144,8 +133,6 @@ public class InvitationOnly extends JavaPlugin {
             }
             voteApprove(userid, senderid);
             return true;
-
-        //Voteban command handling
         } else if (command.getName().equalsIgnoreCase("voteban")) {
             if (player == null) {
                 sender.sendMessage("This command can not be used from the console.");
@@ -179,12 +166,14 @@ public class InvitationOnly extends JavaPlugin {
         userConfig = new ConfigAccessor(this, "users.yml");
         userConfig.reloadConfig();
         File userConfigFile =  userConfig.getFile();
-        //Convert whitelist.json to members in users.yml if no users.yml exists (aka first start with plugin)
+
+        // Convert whitelist.json to members in users.yml if no users.yml exists (aka first start with plugin)
         if(!userConfigFile.isFile()) {
             this.getLogger().info("There seems to be no users.yml. Generating it from the whitelist and adding whitelisted players to members group!");
             Set<OfflinePlayer> whitelist = getServer().getWhitelistedPlayers();
-            if(whitelist.isEmpty()) this.getLogger().info("The whitelist seems to be empty! Not adding any members.");
-            else {
+            if (whitelist.isEmpty()) {
+                this.getLogger().info("The whitelist seems to be empty! Not adding any members.");
+            } else {
                 for(OfflinePlayer player : whitelist) {
                     UUID userid = player.getUniqueId();
                     if (player != null && !isMember(userid)) {
@@ -192,14 +181,16 @@ public class InvitationOnly extends JavaPlugin {
                         this.getLogger().info("Added " + player.getName() + ".");
                     }
                 }
-            this.getLogger().info("Finished converting the whitelist to the users.yml! " + whitelist.size() + " new members added to the users.yml!");
+                this.getLogger().info("Finished converting the whitelist to the users.yml! " + whitelist.size() + " new members added to the users.yml!");
             }
+        } else {
+            // TODO Convert names to UUID's
+
         }
         playerListener = new PlayerListener(this);
         getServer().getPluginManager().registerEvents(playerListener, this);
     }
 
-    //Function to get the uuid of an offline player by name... rare use is suggest by bukkit staff!
     @SuppressWarnings("deprecation")
     public UUID getOfflinePlayerUUID(String username) {
         return getServer().getOfflinePlayer(username).getUniqueId();
@@ -288,7 +279,6 @@ public class InvitationOnly extends JavaPlugin {
         userConfig.saveConfig();
     }
 
-    @SuppressWarnings("deprecation") //Because of setBanned(), look TODO below
     private void voteBan(UUID userid, UUID voterid) {
         List<String> banVotes = userConfig.getConfig().getStringList("invited."+userid.toString()+".ban-votes");
         if (!banVotes.contains(voterid.toString())) banVotes.add(voterid.toString());
@@ -330,7 +320,7 @@ public class InvitationOnly extends JavaPlugin {
             getLogger().info("There is no member online anymore. Searching for players who are only invited.");
             for (Player p : getServer().getOnlinePlayers())
                 if (isInvited(p.getUniqueId()) && !p.isOp())
-                    p.kickPlayer(ChatColor.YELLOW + "You were kicked because invited players can't play on this server without an member online!");
+                    p.kickPlayer(ChatColor.YELLOW + "You were kicked because invited players can't play on this server without a member online!");
         }
     }
 }
