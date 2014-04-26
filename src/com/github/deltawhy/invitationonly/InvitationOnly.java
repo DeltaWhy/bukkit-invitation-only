@@ -1,6 +1,9 @@
 package com.github.deltawhy.invitationonly;
 
+import java.io.File;
 import java.util.List;
+import java.util.Set;
+import java.util.UUID;
 
 import org.bukkit.ChatColor;
 import org.bukkit.OfflinePlayer;
@@ -14,130 +17,155 @@ public class InvitationOnly extends JavaPlugin {
 	PlayerListener playerListener;
 	
 	@Override
-	public boolean onCommand(CommandSender sender, Command command,
-			String label, String[] args) {
+	public boolean onCommand(CommandSender sender, Command command,	String label, String[] args) {
 		Player player = ((sender instanceof Player) ? (Player)sender : null);
 		
+		//Set sender's uuid to "null" if it is the console sending the command to convert it to "an admin" later, if not get the player's uuid
+		UUID senderid = (player == null ? UUID.fromString("00000000-0000-0000-0000-000000000000") : player.getUniqueId());
+		
+		//Innvite command handling
 		if (command.getName().equalsIgnoreCase("invite")) {
 			if (args.length != 1) return false;
-			String username = getServer().getOfflinePlayer(args[0]).getName();
-			String senderName = (player == null ? "$CONSOLE$" : player.getName());
-			if (player != null && !isMember(senderName)) {
+			UUID userid = getOfflinePlayerUUID(args[0]);
+			if (player != null && !isMember(player.getUniqueId())) {
 				player.sendMessage(ChatColor.RED + "You don't have permission to invite people.");
 				return true;
 			}
-			if (isMember(username)) {
-				sender.sendMessage(ChatColor.RED + username + " is already a member!");
+			if (isMember(userid)) {
+				sender.sendMessage(ChatColor.RED + getServer().getOfflinePlayer(userid).getName() + " is already a member!");
 				return true;
 			}
-			if (isInvited(username)) {
-				sender.sendMessage(ChatColor.RED + username + " is already invited!");
+			if (isInvited(userid)) {
+				sender.sendMessage(ChatColor.RED + getServer().getOfflinePlayer(userid).getName() + " is already invited!");
 				return true;
 			}
 			if (player != null && !player.hasPermission("invitationonly.invite.unlimited")) {
-				int playerQuota = userConfig.getConfig().getInt("members."+senderName.toLowerCase()+".invites-left", 0);
+				int playerQuota = userConfig.getConfig().getInt("members."+senderid.toString()+".invites-left", 0);
 				if (playerQuota == 0) {
 					player.sendMessage(ChatColor.RED + "You don't have any invites left!");
 					return true;
 				} else if (playerQuota > 0) {
 					playerQuota--;
-					userConfig.getConfig().set("members."+senderName.toLowerCase()+".invites-left", playerQuota);
+					userConfig.getConfig().set("members."+senderid.toString()+".invites-left", playerQuota);
+					player.sendMessage(ChatColor.GREEN + "You have " + playerQuota + " invites left!");
 				}
 			}
-			invite(username, senderName);
+			invite(userid, senderid);
 			return true;
+			
+		//Uninvite command handling
 		} else if (command.getName().equalsIgnoreCase("uninvite")) {
 			if (args.length != 1) return false;
-			String username = getServer().getOfflinePlayer(args[0]).getName();
-			String senderName = (player == null ? "$CONSOLE$" : player.getName());
-			if (!senderName.equalsIgnoreCase(whoInvited(username))) {
+			UUID userid = getOfflinePlayerUUID(args[0]);
+			String username = getServer().getOfflinePlayer(userid).getName();
+			if (!userConfig.getConfig().contains("invited." + userid)) {
+				if(userConfig.getConfig().contains("members." + userid)) sender.sendMessage(ChatColor.RED + username + "is a member! Remove him with /unapprove " + username + ".");
+				else sender.sendMessage(ChatColor.RED + username + "is not invited!");
+				return true;				
+			} 
+			if (!senderid.equals(whoInvited(userid))) {
 				sender.sendMessage(ChatColor.RED + "You didn't invite " + username + "!");
 				return true;
 			}
 			if (player != null && !player.hasPermission("invitationonly.invite.unlimited")) {
-				int playerQuota = userConfig.getConfig().getInt("members."+senderName.toLowerCase()+".invites-left", -1);
+				int playerQuota = userConfig.getConfig().getInt("members."+senderid.toString()+".invites-left", -1);
 				if (playerQuota >= 0) {
 					playerQuota++;
-					userConfig.getConfig().set("members."+senderName.toLowerCase()+".invites-left", playerQuota);
+					userConfig.getConfig().set("members."+senderid.toString()+".invites-left", playerQuota);
 				}
 			}
-			uninvite(username);
+			uninvite(userid);
 			return true;
+			
+		//Invite quota command handling	
 		} else if (command.getName().equalsIgnoreCase("invitequota")) {
 			if (player == null && args.length == 0) return false;
-			String username = (args.length > 0) ? getServer().getOfflinePlayer(args[0]).getName() : player.getName();
-			if (!isMember(username)) {
+			UUID userid = getOfflinePlayerUUID(args[0]);
+			String username = getServer().getOfflinePlayer(userid).getName();
+			if (!isMember(userid)) {
 				sender.sendMessage(ChatColor.RED + username + " is not a member!");
 				return true;
 			}
 			if (args.length < 2) {
-				int playerQuota = userConfig.getConfig().getInt("members."+username.toLowerCase()+".invites-left", 0);
+				int playerQuota = userConfig.getConfig().getInt("members."+userid.toString()+".invites-left", 0);
 				sender.sendMessage(ChatColor.GREEN + username + " has " + playerQuota + " invites left.");
 			} else if (args.length == 2) {
 				try {
 					int quota = Integer.parseInt(args[1]);
-					userConfig.getConfig().set("members."+username.toLowerCase()+".invites-left", quota);
+					userConfig.getConfig().set("members."+userid.toString()+".invites-left", quota);
 					userConfig.saveConfig();
 				} catch (NumberFormatException e) {
 					return false;
 				}
 			}
 			return true;
+
+		//Approve invite command handling	
 		} else if (command.getName().equalsIgnoreCase("approveinvite")) {
 			if (args.length != 1) return false;
-			String username = getServer().getOfflinePlayer(args[0]).getName();
-			promoteToMember(username);
+			UUID userid = getOfflinePlayerUUID(args[0]);
+			promoteToMember(userid);
+			getServer().getOfflinePlayer(userid).setWhitelisted(true);
 			return true;
+
+		//Unapprove command handling		
 		} else if (command.getName().equalsIgnoreCase("unapprove")) {
 			if (args.length != 1) return false;
-			String username = getServer().getOfflinePlayer(args[0]).getName();
-			if (!isMember(username)) {
-				sender.sendMessage(ChatColor.RED + username + " is not a member!");
+			UUID userid = getOfflinePlayerUUID(args[0]);
+			if (!isMember(userid)) {
+				sender.sendMessage(ChatColor.RED + getServer().getOfflinePlayer(userid).getName() + " is not a member!");
 				return true;
 			}
-			removeFromMembers(username);
+			removeFromMembers(userid);
+			getServer().getOfflinePlayer(userid).setWhitelisted(false);
 			return true;
+			
+		//Voteapprove command handling			
 		} else if (command.getName().equalsIgnoreCase("voteapprove")) {
 			if (player == null) {
 				sender.sendMessage("This command can not be used from the console.");
 				return true;
 			}
-			if (player != null && !isMember(player.getName())) {
+			if (player != null && !isMember(player.getUniqueId())) {
 				player.sendMessage(ChatColor.RED + "Only members can vote.");
 				return true;
 			}
 			if (args.length != 1) return false;
-			String username = getServer().getOfflinePlayer(args[0]).getName();
-			if (isMember(username)) {
+			UUID userid = getOfflinePlayerUUID(args[0]);
+			String username = getServer().getOfflinePlayer(userid).getName();
+			if (isMember(userid)) {
 				sender.sendMessage(ChatColor.RED + username + " is already a member!");
 				return true;
 			}
-			if (!isInvited(username)) {
+			if (!isInvited(userid)) {
 				sender.sendMessage(ChatColor.RED + username + " hasn't been invited!");
 				return true;
 			}
-			voteApprove(username, player.getName());
+			voteApprove(userid, senderid);
 			return true;
+			
+		//Voteban command handling
 		} else if (command.getName().equalsIgnoreCase("voteban")) {
 			if (player == null) {
 				sender.sendMessage("This command can not be used from the console.");
 				return true;
 			}
-			if (player != null && !isMember(player.getName())) {
+			if (player != null && !isMember(player.getUniqueId())) {
 				player.sendMessage(ChatColor.RED + "Only members can vote.");
 				return true;
 			}
 			if (args.length != 1) return false;
-			String username = getServer().getOfflinePlayer(args[0]).getName();
-			if (isMember(username)) {
+			UUID userid = getOfflinePlayerUUID(args[0]);
+			String username = getServer().getOfflinePlayer(userid).getName();
+			if (isMember(userid)) {
 				sender.sendMessage(ChatColor.RED + username + " is a member!");
 				return true;
 			}
-			if (!isInvited(username)) {
+			if (!isInvited(userid)) {
 				sender.sendMessage(ChatColor.RED + username + " hasn't been invited!");
 				return true;
 			}
-			voteBan(username, player.getName());
+			voteBan(userid, senderid);
 			return true;
 		} else {
 			return false;
@@ -149,25 +177,48 @@ public class InvitationOnly extends JavaPlugin {
 		saveDefaultConfig();
 		userConfig = new ConfigAccessor(this, "users.yml");
 		userConfig.reloadConfig();
+		File userConfigFile =  userConfig.getFile();
+		//Convert whitelist.json to members in users.yml if no users.yml exists (aka first start with plugin)
+		if(!userConfigFile.isFile()) {
+			this.getLogger().info("There seems to be no users.yml. Generating it from the whitelist and adding whitelisted players to members group!");
+		    Set<OfflinePlayer> whitelist = getServer().getWhitelistedPlayers();
+		    if(whitelist.isEmpty()) this.getLogger().info("The whitelist seems to be empty! Not adding any members.");
+		    else {
+		    	for(OfflinePlayer player : whitelist) {
+		    		UUID userid = player.getUniqueId();
+					if (player != null && !isMember(userid)) {
+						promoteToMember(userid);
+						this.getLogger().info("Added " + player.getName() + ".");
+					}
+		    	}
+			this.getLogger().info("Finished converting the whitelist to the users.yml! " + whitelist.size() + " new members added to the users.yml!");
+		    }		    	
+		}
 		playerListener = new PlayerListener(this);
 		getServer().getPluginManager().registerEvents(playerListener, this);
 	}
 	
-	public boolean isMember(String username) {
-		return userConfig.getConfig().contains("members."+username.toLowerCase());
+	//Function to get the uuid of an offline player by name... rare use is suggest by bukkit staff!
+	@SuppressWarnings("deprecation")
+	public UUID getOfflinePlayerUUID(String username) {
+		return getServer().getOfflinePlayer(username).getUniqueId();
 	}
 	
-	public boolean isInvited(String username) {
-		return userConfig.getConfig().contains("invited."+username.toLowerCase());
+	public boolean isMember(UUID userid) {
+		return userConfig.getConfig().contains("members."+userid.toString());
 	}
 	
-	public String whoInvited(String username) {
-		return userConfig.getConfig().getString("invited."+username.toLowerCase()+".invited-by", "");
+	public boolean isInvited(UUID userid) {
+		return userConfig.getConfig().contains("invited."+userid.toString());
+	}
+	
+	public UUID whoInvited(UUID userid) {
+		return UUID.fromString(userConfig.getConfig().getString("invited."+userid.toString()+".invited-by", ""));
 	}
 	
 	public boolean isMemberOnline() {
 		for (Player p : getServer().getOnlinePlayers()) {
-			if (isMember(p.getName())) return true;
+			if (isMember(p.getUniqueId())) return true;
 		}
 		return false;
 	}
@@ -180,72 +231,106 @@ public class InvitationOnly extends JavaPlugin {
 	}
 	
 	//Won't check quotas here!
-	public void invite(String username, String whoInvited) {
-		userConfig.getConfig().createSection("invited."+username.toLowerCase()).set("invited-by", whoInvited.toLowerCase());
+	public void invite(UUID userid, UUID uuid) {
+		String username = getServer().getOfflinePlayer(userid).getName();
+		userConfig.getConfig().createSection("invited."+userid.toString()).set("invited-by", uuid.toString());
+		userConfig.getConfig().set("invited."+userid.toString()+".name", username);
 		userConfig.saveConfig();
-		if (whoInvited.equals("$CONSOLE$")) whoInvited = "An admin";
-		getServer().broadcastMessage(ChatColor.YELLOW + whoInvited + " invited " + username + " to the server!");
+		String inviter = (uuid.toString().equals("00000000-0000-0000-0000-000000000000")) ? "An admin" : getServer().getPlayer(uuid).getName() ;
+		getServer().broadcastMessage(ChatColor.YELLOW + inviter + " invited " + getServer().getOfflinePlayer(userid).getName() + " to the server!");
 	}
 	
 	//Won't check who invited!
-	public void uninvite(String username) {
-		userConfig.getConfig().set("invited."+username.toLowerCase(), null);
+	public void uninvite(UUID userid) {
+		userConfig.getConfig().set("invited."+userid.toString(), null);
 		userConfig.saveConfig();
-		if (getServer().getOfflinePlayer(username).isOnline() && !isMember(username) && (!getConfig().getBoolean("open-when-op-online", false) || !isOpOnline())) {
-			getServer().getPlayerExact(username).kickPlayer("You were un-invited!");
+		if (getServer().getOfflinePlayer(userid).isOnline() && !isMember(userid) && (!getConfig().getBoolean("open-when-op-online", false) || !isOpOnline())) {
+			getServer().getPlayer(userid).kickPlayer(ChatColor.GOLD + "You were un-invited!");
 		}
-		getServer().broadcastMessage(ChatColor.YELLOW + username + " was un-invited. You may re-invite them.");
+		getServer().broadcastMessage(ChatColor.YELLOW + getServer().getOfflinePlayer(userid).getName() + " was un-invited. You may re-invite them.");
 	}
 	
-	public void promoteToMember(String username) {
-		userConfig.getConfig().set("invited."+username.toLowerCase(), null);
-		userConfig.getConfig().set("members."+username.toLowerCase()+".invites-left", getConfig().getInt("invite-quota", 0));
+	public void promoteToMember(UUID userid) {
+		String username = getServer().getOfflinePlayer(userid).getName();
+		userConfig.getConfig().set("invited."+userid.toString(), null);
+		userConfig.getConfig().set("members."+userid.toString()+".invites-left", getConfig().getInt("invite-quota", 0));
+		userConfig.getConfig().set("members."+userid.toString()+".name", username);
 		userConfig.saveConfig();
 		getServer().broadcastMessage(ChatColor.YELLOW + username + " is now a member! Congratulations!");
 	}
 	
-	public void removeFromMembers(String username) {
-		userConfig.getConfig().set("invited."+username.toLowerCase(), null);
-		userConfig.getConfig().set("members."+username.toLowerCase(), null);
+	public void removeFromMembers(UUID userid) {
+		userConfig.getConfig().set("invited."+userid.toString(), null);
+		userConfig.getConfig().set("members."+userid.toString(), null);
+		getServer().getOfflinePlayer(userid).setWhitelisted(false);
 		userConfig.saveConfig();
-		if (getServer().getOfflinePlayer(username).isOnline() && (!getConfig().getBoolean("open-when-op-online") || !isOpOnline())) {
-			getServer().getPlayerExact(username).kickPlayer("You are no longer a member!");
+		if (getServer().getOfflinePlayer(userid).isOnline() && (!getConfig().getBoolean("open-when-op-online") || !isOpOnline())) {
+			getServer().getPlayer(userid).kickPlayer(ChatColor.GOLD + "You are no longer a member!");
 		}
-		getServer().broadcastMessage(ChatColor.YELLOW + username + " is no longer a member. You may re-invite them.");
+		getServer().broadcastMessage(ChatColor.YELLOW + getServer().getOfflinePlayer(userid).getName() + " is no longer a member. You may re-invite them.");
 	}
 	
-	private void voteApprove(String username, String voterName) {
-		List<String> approveVotes = userConfig.getConfig().getStringList("invited."+username.toLowerCase()+".approve-votes");
-		if (!approveVotes.contains(voterName.toLowerCase())) approveVotes.add(voterName.toLowerCase());
+	private void voteApprove(UUID userid, UUID voterid) {
+		List<String> approveVotes = userConfig.getConfig().getStringList("invited."+userid.toString()+".approve-votes");
+		if (!approveVotes.contains(voterid.toString())) approveVotes.add(voterid.toString());
 		int votesReceived = approveVotes.size();
 		int votesNeeded = getConfig().getInt("approve-votes-needed", 0);
 		if (votesReceived >= votesNeeded) {
 			getServer().broadcastMessage(ChatColor.YELLOW + "The tribe has spoken!");
-			promoteToMember(username);
+			promoteToMember(userid);
+			getServer().getOfflinePlayer(userid).setWhitelisted(true);
 		} else {
-			getServer().broadcastMessage(ChatColor.YELLOW + voterName + " voted to make " + username
+			getServer().broadcastMessage(ChatColor.YELLOW + getServer().getPlayer(voterid).getName()+ " voted to make " + getServer().getOfflinePlayer(userid).getName()
 					+ " a member. " + (votesNeeded - votesReceived) + " more votes needed.");
 		}
-		userConfig.getConfig().set("invited."+username.toLowerCase()+".approve-votes", approveVotes);
+		userConfig.getConfig().set("invited."+userid.toString()+".approve-votes", approveVotes);
 		userConfig.saveConfig();
 	}
 	
-	private void voteBan(String username, String voterName) {
-		List<String> banVotes = userConfig.getConfig().getStringList("invited."+username.toLowerCase()+".ban-votes");
-		if (!banVotes.contains(voterName)) banVotes.add(voterName);
+	@SuppressWarnings("deprecation") //Because of setBanned(), look TODO below
+	private void voteBan(UUID userid, UUID voterid) {
+		List<String> banVotes = userConfig.getConfig().getStringList("invited."+userid.toString()+".ban-votes");
+		if (!banVotes.contains(voterid.toString())) banVotes.add(voterid.toString());
 		int votesReceived = banVotes.size();
 		int votesNeeded = getConfig().getInt("ban-votes-needed", 0);
+		OfflinePlayer player = getServer().getOfflinePlayer(userid);
 		if (votesReceived >= votesNeeded) {
-			OfflinePlayer player = getServer().getOfflinePlayer(username);
-			player.setBanned(true);
-			if (player.isOnline()) getServer().getPlayerExact(username).kickPlayer("You have been banned!");
+			player.setBanned(true); //TODO: Change to non-deprecated BanList.addBan method when it uses UUIDs instead of usernames...
+			player.setWhitelisted(false);
+			if (player.isOnline()) getServer().getPlayer(userid).kickPlayer(ChatColor.GOLD + "You have been banned!");
 			getServer().broadcastMessage(ChatColor.YELLOW + "The tribe has spoken!");
-			getServer().broadcastMessage(ChatColor.YELLOW + username + " has been banned and cannot be re-invited.");;
+			getServer().broadcastMessage(ChatColor.YELLOW + player.getName() + " has been banned and cannot be re-invited.");;
 		} else {
-			getServer().broadcastMessage(ChatColor.YELLOW + voterName + " voted to ban " + username
+			getServer().broadcastMessage(ChatColor.YELLOW + getServer().getPlayer(voterid).getName() + " voted to ban " + player.getName()
 					+ ". " + (votesNeeded - votesReceived) + " more votes needed.");
 		}
-		userConfig.getConfig().set("invited."+username.toLowerCase()+".ban-votes", banVotes);
+		userConfig.getConfig().set("invited."+userid.toString()+".ban-votes", banVotes);
 		userConfig.saveConfig();
+	}
+
+	//Function to update the name of a player to save the last known name and make the users.yml more readable for humans
+	public void updateConfigName(UUID userid, String username) {
+		if (isInvited(userid)) {
+			userConfig.getConfig().set("invited."+userid.toString()+".name", username);			
+		}
+		if (isMember(userid)) {
+			userConfig.getConfig().set("members."+userid.toString()+".name", username);
+		}		
+	}
+
+	//Check if we have to kick invited players because all OPs/Members are gone.
+	public void checkPlayers() {
+		if (getConfig().getBoolean("require-op-online", false) && !isOpOnline()) {
+			getLogger().info("There is no OP online anymore. Searching for players who are only invited.");
+			for (Player p : getServer().getOnlinePlayers()) 
+				if (isInvited(p.getUniqueId()) && !p.isOp()) 
+					p.kickPlayer(ChatColor.YELLOW + "You were kicked because invited players can't play on this server without an OP online!");
+		} else if (getConfig().getBoolean("require-member-online", false) && !isMemberOnline()) {
+			getLogger().info("There is no member online anymore. Searching for players who are only invited.");
+			for (Player p : getServer().getOnlinePlayers()) 
+				if (isInvited(p.getUniqueId()) && !p.isOp()) 
+					p.kickPlayer(ChatColor.YELLOW + "You were kicked because invited players can't play on this server without an member online!");
+		}
+		
 	}
 }
