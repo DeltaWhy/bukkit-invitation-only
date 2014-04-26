@@ -10,6 +10,7 @@ import org.bukkit.ChatColor;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
+import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -174,7 +175,7 @@ public class InvitationOnly extends JavaPlugin {
             if (whitelist.isEmpty()) {
                 this.getLogger().info("The whitelist seems to be empty! Not adding any members.");
             } else {
-                for(OfflinePlayer player : whitelist) {
+                for (OfflinePlayer player : whitelist) {
                     UUID userid = player.getUniqueId();
                     if (player != null && !isMember(userid)) {
                         promoteToMember(userid);
@@ -184,8 +185,27 @@ public class InvitationOnly extends JavaPlugin {
                 this.getLogger().info("Finished converting the whitelist to the users.yml! " + whitelist.size() + " new members added to the users.yml!");
             }
         } else {
-            // TODO Convert names to UUID's
+            ConfigurationSection invited = userConfig.getConfig().getConfigurationSection("invited");
+            for (String name : invited.getKeys(false)) {
+                if (name.contains("-")) continue; // it's already a UUID section
+                getLogger().info("Converting "+name+" to UUID");
+                ConfigurationSection section = invited.getConfigurationSection(name);
+                section.set("invited-by", getOfflinePlayerUUID(section.getString("invited-by")).toString());
+                section.set("name", name);
+                invited.set(name, null);
+                invited.set(getOfflinePlayerUUID(name).toString(), section);
+            }
 
+            ConfigurationSection members = userConfig.getConfig().getConfigurationSection("members");
+            for (String name : members.getKeys(false)) {
+                if (name.contains("-")) continue; // it's already a UUID section
+                getLogger().info("Converting "+name+" to UUID");
+                ConfigurationSection section = members.getConfigurationSection(name);
+                section.set("name", name);
+                members.set(name, null);
+                members.set(getOfflinePlayerUUID(name).toString(), section);
+            }
+            userConfig.saveConfig();
         }
         playerListener = new PlayerListener(this);
         getServer().getPluginManager().registerEvents(playerListener, this);
@@ -193,6 +213,7 @@ public class InvitationOnly extends JavaPlugin {
 
     @SuppressWarnings("deprecation")
     public UUID getOfflinePlayerUUID(String username) {
+        if (username.equals("$console$")) return UUID.fromString("00000000-0000-0000-0000-000000000000");
         return getServer().getOfflinePlayer(username).getUniqueId();
     }
 
